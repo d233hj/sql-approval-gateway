@@ -6,6 +6,11 @@
 > 人必须在已解锁的会话里**逐条批准**，由网关代为执行并回传结果。同一套 core 服务四种客户端：
 > Web 审批台、Windows 桌面端、DeepSeek Harness 插件、MCP stdio server。
 
+[![CI](https://github.com/d233hj/sql-approval-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/d233hj/sql-approval-gateway/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/d233hj/sql-approval-gateway?include_prereleases&sort=semver)](https://github.com/d233hj/sql-approval-gateway/releases)
+[![Node](https://img.shields.io/badge/node-%E2%89%A524-brightgreen)](package.json)
+
 <p align="center"><em>Status: v0.1.0 — 早期可用版本，接口与数据格式仍可能调整。</em></p>
 
 ---
@@ -40,12 +45,12 @@
 
 SQL Approval Gateway 把这件事拆成三方：**Agent 提交 → 人审批 → 网关执行**。
 
-```
-Agent (LLM / MCP / DSH 插件)     人（审批台）                数据库
-         │  提交只读提案              │  解锁 + 批准               │
-         └──────────────▶ core ◀─────┘                            │
-                         │  校验策略、执行、审计                    │
-                         └────────────────────────────────────────▶
+```mermaid
+flowchart LR
+  A["Agent<br/>LLM / MCP / DSH 插件"] -- "提交只读提案" --> C["core<br/>策略 · 存储 · 审计"]
+  H["人（审批台）"] -- "解锁 + 批准" --> C
+  C -- "只读执行" --> D[("数据库")]
+  C -. "SSE 实时推送" .-> H
 ```
 
 关键点：**凭据只在 core 的加密 vault 里**，Agent 侧只有提交/读取权限的 token；没有人的批准，任何 SQL 都不会执行。
@@ -164,7 +169,7 @@ Agent (LLM / MCP / DSH 插件)     人（审批台）                数据库
 
 ### 方式 A：Windows 便携版（推荐给最终用户）
 
-1. 从 Releases 下载 `SQL审批网关-<version>-portable.exe`；
+1. 从 [Releases](https://github.com/d233hj/sql-approval-gateway/releases) 下载 `SQL审批网关-<version>-portable.exe` 并校验 `SHA256SUMS.txt`；
 2. 首次运行若出现 SmartScreen，点「更多信息 → 仍要运行」；
 3. 双击后等待窗口出现（便携版每次启动需解压运行时，首次约 1–2 分钟，属正常现象）；
 4. 按[首次使用](#首次使用)完成设置。

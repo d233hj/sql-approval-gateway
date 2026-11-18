@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/d233hj/sql-approval-gateway/security/advisories/new
+    about: Report security issues privately (see SECURITY.md), never in a public issue.
+  - name: Documentation
+    url: https://github.com/d233hj/sql-approval-gateway#readme
+    about: Read the README (install, clients, security model, limitations) first.
