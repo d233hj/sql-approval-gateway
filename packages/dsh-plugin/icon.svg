@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="SQL approval gateway">
+  <defs>
+    <linearGradient id="sagBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1f4f7a"/>
+      <stop offset="1" stop-color="#0e2740"/>
+    </linearGradient>
+  </defs>
+  <rect x="3" y="3" width="58" height="58" rx="15" fill="url(#sagBg)"/>
+  <path d="M32 10l17 6v13c0 11-7 19-17 23-10-4-17-12-17-23V16z" fill="none" stroke="#9fd0ff" stroke-width="3" stroke-linejoin="round"/>
+  <ellipse cx="32" cy="25" rx="10" ry="4" fill="#eaf3ff"/>
+  <path d="M22 25v8c0 2.4 4.5 4.3 10 4.3s10-1.9 10-4.3v-8" fill="none" stroke="#eaf3ff" stroke-width="2.6"/>
+  <path d="M22 33v8c0 2.4 4.5 4.3 10 4.3s10-1.9 10-4.3v-8" fill="none" stroke="#eaf3ff" stroke-width="2.6"/>
+  <path d="M39 45l5 6 10-12" fill="none" stroke="#7fe0a8" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

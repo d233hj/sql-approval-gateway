@@ -1,0 +1,21 @@
+{
+  "name": "@sql-approval/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SQL Approval Gateway — MCP stdio server (6 read-only agent tools)",
+  "type": "module",
+  "bin": {
+    "sql-approval-mcp": "./server.mjs"
+  },
+  "files": [
+    "server.mjs",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node test.mjs"
+  }
+}

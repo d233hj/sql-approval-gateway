@@ -1,0 +1,39 @@
+# Dependencies and local build artifacts (rebuilt inside the image).
+node_modules
+**/node_modules
+dist
+**/dist
+
+# VCS and local scratch state.
+.git
+.gitignore
+.work
+
+# Logs and temp files.
+*.log
+**/*.log
+*.tmp
+**/*.tmp
+
+# Runtime data and secrets must never enter the build context / image.
+vault.json
+**/vault.json
+control.db
+control.db-*
+**/control.db
+**/control.db-*
+endpoint.json
+**/endpoint.json
+instance.lock
+**/instance.lock
+instance-lock.db
+**/instance-lock.db
+agent-token.once
+**/agent-token.once
+
+# Not needed by the image build.
+docs
+tests
+plugin
+packages/*/test
+packages/*/coverage

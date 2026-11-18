@@ -1,0 +1,14 @@
+# Overlay only: always use
+#   docker compose -f docker-compose.yml -f deploy/compose.setup.yml ...
+# `image` is repeated so that `docker compose -f deploy/compose.setup.yml config`
+# can also validate this file standalone; the base file owns build/ports/volumes.
+services:
+  sag:
+    image: sql-approval-gateway:0.1.0
+    environment:
+      # One-shot bootstrap (DESIGN §9). Put the file in /data before start:
+      #   docker compose -f docker-compose.yml -f deploy/compose.setup.yml create
+      #   docker compose cp ./setup-password.txt sag:/data/setup-password.txt
+      #   docker compose -f docker-compose.yml -f deploy/compose.setup.yml start sag
+      # core reads and deletes it on first start, then the normal compose file is used.
+      SAG_SETUP_PASSWORD_FILE: /data/setup-password.txt

@@ -1,0 +1,69 @@
+# Electron Builder configuration for the SQL Approval Gateway desktop shell.
+#
+# Build from packages/desktop:
+#   npx electron-builder --win portable --config electron-builder.yml --publish never
+#
+# Prerequisites (all staged locally; a first build may still download the NSIS
+# tooling unless it is already in the electron-builder cache):
+#   1. packages/{core,web,shared}/dist are built.
+#   2. ../../.work/portable-runtime holds the production runtime node_modules:
+#        - package.json with the exact versions of mssql, node-sql-parser and zod
+#          taken from packages/core/package.json (12.7.14 / 5.4.0 / 3.25.76);
+#        - `npm install --omit=dev --ignore-scripts --prefix .work/portable-runtime`
+#        - copy packages/shared/package.json + packages/shared/dist to
+#          .work/portable-runtime/node_modules/@sql-approval/shared (core dist
+#          imports the bare specifier @sql-approval/shared).
+#   3. Electron 45.3.1 is installed in the workspace (electronDist below).
+appId: com.sqlapproval.gateway
+productName: SQL审批网关
+copyright: Copyright © 2026 SQL Approval Gateway
+
+# Use the Electron already installed in the workspace instead of downloading it
+# again; keep the version pinned so a stale download cannot change the runtime.
+electronVersion: 45.3.1
+electronDist: ../../node_modules/electron/dist
+
+directories:
+  output: ../../.work/portable-dist
+  buildResources: build
+
+files:
+  - main.js
+  - lib.js
+  - preload.js
+  - package.json
+  - assets/**
+
+asar: true
+npmRebuild: false
+
+extraResources:
+  # core runs from resources/core/dist/src/cli.js (see main.js).
+  - from: ../core/dist
+    to: core/dist
+  # SAG_WEB_DIST = resources/web/dist.
+  - from: ../web/dist
+    to: web/dist
+  # Kept for parity with the documented resource layout.
+  - from: ../shared/dist
+    to: shared/dist
+  # Bare imports from core dist resolve here (resources/node_modules), including
+  # @sql-approval/shared and the lazily required mssql driver.
+  - from: ../../.work/portable-runtime/node_modules
+    to: node_modules
+
+win:
+  target:
+    - target: portable
+      arch:
+        - x64
+  icon: assets/app.ico
+  # ASCII internal executable name avoids non-ASCII paths in the NSIS temp
+  # extraction dir; the visible product name and file name stay Chinese.
+  executableName: sql-approval-gateway
+
+artifactName: SQL审批网关-${version}-portable.exe
+
+portable:
+  # Per-user portable app: it never requests elevation.
+  requestExecutionLevel: user

@@ -1,0 +1,43 @@
+# SQL Approval Gateway — single-container deployment (DESIGN §9/§10, P4-b).
+#
+# The published port is loopback-only on the host; inside the container core
+# binds 0.0.0.0 so Docker port forwarding can reach it. The application still
+# rejects non-loopback Host/Origin headers, so the gateway is not exposed.
+#
+# First setup: open http://127.0.0.1:43119 in a browser, or use
+# SAG_SETUP_PASSWORD_FILE (deploy/README.md).
+
+services:
+  sag:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sql-approval-gateway:0.1.0
+    restart: unless-stopped
+    init: true
+    ports:
+      - "127.0.0.1:43119:43119"
+    volumes:
+      - sag-data:/data
+    environment:
+      SAG_HOST: "0.0.0.0"
+      # Wildcard bind inside the container only; the host publishes loopback only.
+      SAG_ALLOW_NON_LOOPBACK_BIND: "1"
+      SAG_PORT: "43119"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "7"
+
+volumes:
+  sag-data:
+    name: sag-data

@@ -1,0 +1,4 @@
+- insert:
+    - id: sql-approval
+      name: '@sql-approval/dsh'
+      config: {}

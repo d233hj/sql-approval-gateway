@@ -1,0 +1,17 @@
+{
+  "name": "@sql-approval/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "SQL Approval Gateway web approval console (dependency-free TypeScript SPA)",
+  "scripts": {
+    "dev": "node scripts/dev-server.mjs",
+    "preview": "node scripts/dev-server.mjs --dist",
+    "prebuild": "node scripts/clean.mjs",
+    "build": "tsc -p tsconfig.json && node scripts/postbuild.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}

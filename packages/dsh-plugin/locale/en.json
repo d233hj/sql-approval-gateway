@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "SQL approvals",
+    "description": "Submit read-only SQL proposals to a local approval gateway, approve them in an embedded console, and read results through agent tools."
+  }
+}
