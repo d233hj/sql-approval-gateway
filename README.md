@@ -175,6 +175,9 @@ flowchart LR
 4. 按[首次使用](#首次使用)完成设置。
 
 > 便携版数据保存在 exe 同目录的 `data\`，整个目录可整体拷贝/迁移。
+>
+> 便携 exe **只包含桌面端 + core + Web SPA**；DSH 插件与 MCP server 是独立小包，见 Releases 里的
+> `sql-approval-dsh-*.zip/.tgz` 与 `sql-approval-mcp-*.zip`（也可直接从源码目录使用）。
 
 ### 方式 B：源码运行（开发者）
 
@@ -246,6 +249,7 @@ core 同源托管，浏览器打开 `http://127.0.0.1:43119` 即可；无需额�
         url: http://127.0.0.1:43119
 ```
 
+也可以从 Releases 下载 `sql-approval-dsh-<version>.zip` 解压后，把 `plugin_manager` 的 `target` 指向解压目录的绝对路径。
 token 建议用环境变量 `SAG_TOKEN`（`sag_…`）注入，避免写进 profile。插件提供 6 个工具：
 `sql_list_sources`、`sql_submit`、`sql_submit_and_wait`、`sql_status`、`sql_result`、`sql_cancel`。
 详见 [`packages/dsh-plugin/README.md`](packages/dsh-plugin/README.md)。
@@ -267,6 +271,7 @@ token 建议用环境变量 `SAG_TOKEN`（`sag_…`）注入，避免写进 prof
 }
 ```
 
+也可从 Releases 下载 `sql-approval-mcp-<version>.zip` 解压，把 `args` 指向解压目录里的 `server.mjs`（零依赖，只需要 Node）。
 MCP 与 DSH 插件使用同一组工具语义：**只提交、只读、不批准、不执行**。详见 [`packages/mcp/README.md`](packages/mcp/README.md)。
 
 ---
