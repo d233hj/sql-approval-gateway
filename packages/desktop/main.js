@@ -19,8 +19,10 @@ const {
   Notification,
   Tray,
   dialog,
+  ipcMain,
   nativeImage,
   session,
+  shell,
   utilityProcess,
 } = require('electron');
 const fs = require('node:fs');
@@ -58,6 +60,7 @@ const {
 } = require('./lib.js');
 
 const APP_NAME = 'SQL Approval Gateway';
+const APP_USER_MODEL_ID = 'com.sqlapproval.gateway';
 const CORE_ENTRY_RELATIVE = path.join('..', 'core', 'dist', 'src', 'cli.js');
 const HEALTH_INITIAL_TIMEOUT_MS = 2000;
 const HEALTH_START_TIMEOUT_MS = 15000;
@@ -213,6 +216,10 @@ function startCore() {
     // Packaged builds carry core/web/shared outside the asar; the server must
     // serve the bundled SPA instead of looking for a monorepo build output.
     if (app.isPackaged) childEnv.SAG_WEB_DIST = path.join(process.resourcesPath, 'web', 'dist');
+    // The desktop shell shows native notifications from the renderer. Disabling
+    // core's hidden-PowerShell toast keeps HIPS/EDR products from flagging the
+    // gateway for a "hidden PowerShell" action.
+    childEnv.SAG_TOAST = '0';
     coreChild = utilityProcess.fork(coreEntry, args, {
       cwd: app.isPackaged ? process.resourcesPath : path.resolve(__dirname, '..', '..'),
       env: childEnv,
@@ -553,6 +560,70 @@ function rebuildTrayMenu() {
   tray.setContextMenu(menu);
 }
 
+/** Renderer -> main notification bridge (only our own window may use it). */
+function registerNotificationBridge() {
+  ipcMain.on('sag:notify', (event, payload) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (event.sender !== mainWindow.webContents) return;
+    const title =
+      payload && typeof payload.title === 'string' ? payload.title.slice(0, 120) : 'SQL 审批 · 新提案';
+    const body = payload && typeof payload.body === 'string' ? payload.body.trim().slice(0, 300) : '';
+    if (body === '') return;
+    log('info', 'notification_requested', { title });
+    showNotification(title, body);
+  });
+}
+
+/**
+ * Native Windows toast. Unpackaged Electron apps only get toasts when their
+ * AUMID matches a Start Menu shortcut, which `ensureNotificationShortcut`
+ * creates once. If Windows refuses, fall back to a tray balloon.
+ */
+function showNotification(title, body) {
+  try {
+    if (Notification.isSupported()) {
+      new Notification({ title, body }).show();
+      return;
+    }
+  } catch (error) {
+    log('warn', 'notification_failed', {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+  notifyFromTray(title, body);
+}
+
+/**
+ * Register the app's AUMID through a Start Menu shortcut so Windows accepts its
+ * toasts. Idempotent and best effort: failure never affects the console.
+ */
+function ensureNotificationShortcut() {
+  if (process.platform !== 'win32') return;
+  try {
+    const programs = path.join(
+      app.getPath('appData'),
+      'Microsoft',
+      'Windows',
+      'Start Menu',
+      'Programs',
+    );
+    fs.mkdirSync(programs, { recursive: true });
+    const linkPath = path.join(programs, `${APP_NAME}.lnk`);
+    const written = shell.writeShortcutLink(linkPath, 'create', {
+      target: process.execPath,
+      args: app.isPackaged ? '' : `"${app.getAppPath()}"`,
+      cwd: app.isPackaged ? path.dirname(process.execPath) : app.getAppPath(),
+      description: APP_NAME,
+      appUserModelId: APP_USER_MODEL_ID,
+    });
+    log(written ? 'info' : 'warn', 'notification_shortcut', { path: linkPath, written });
+  } catch (error) {
+    log('warn', 'notification_shortcut_failed', {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 /** Tray balloon (Windows) with a best-effort Notification fallback. */
 function notifyFromTray(title, content) {
   try {
@@ -699,7 +770,7 @@ async function bootstrap() {
   });
 
   try {
-    app.setAppUserModelId('com.sqlapproval.gateway');
+    app.setAppUserModelId(APP_USER_MODEL_ID);
   } catch {
     // Optional on non-Windows.
   }
@@ -722,10 +793,18 @@ async function bootstrap() {
     ? path.join(process.resourcesPath, 'core', 'dist', 'src', 'cli.js')
     : path.resolve(__dirname, CORE_ENTRY_RELATIVE);
 
-  // Renderer security checklist (DESIGN §8.2): every permission is denied.
+  // Renderer security checklist (DESIGN §8.2): every permission is denied
+  // except Web Notifications for the gateway's own origin — the console uses
+  // them for "new proposal" toasts when the window is in the tray.
   try {
     const defaultSession = session.defaultSession;
     defaultSession.setPermissionRequestHandler((_contents, permission, callback, details) => {
+      const url = details && details.requestingUrl ? details.requestingUrl : '';
+      if (permission === 'notifications' && target && isAllowedNavigation(url, target.origin)) {
+        log('info', 'permission_granted', { permission, origin: url });
+        callback(true);
+        return;
+      }
       log('warn', 'permission_denied', {
         permission,
         origin: details && details.requestingUrl ? details.requestingUrl : null,
@@ -733,6 +812,9 @@ async function bootstrap() {
       callback(false);
     });
     defaultSession.setPermissionCheckHandler((_contents, permission, requestingOrigin) => {
+      if (permission === 'notifications' && target && requestingOrigin === target.origin) {
+        return true;
+      }
       log('warn', 'permission_check_denied', { permission, origin: requestingOrigin });
       return false;
     });
@@ -825,6 +907,8 @@ async function bootstrap() {
   }
 
   if (isQuitting) return;
+  registerNotificationBridge();
+  ensureNotificationShortcut();
   // A single-purpose console: the default File/Edit/View menu only adds noise
   // and exposes zoom/devtools shortcuts the shell deliberately does not offer.
   Menu.setApplicationMenu(null);
@@ -900,3 +984,4 @@ if (!gotSingleInstanceLock) {
       failStartup(error instanceof Error ? error.message : String(error));
     });
 }
+

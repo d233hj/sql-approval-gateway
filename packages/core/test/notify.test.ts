@@ -85,25 +85,27 @@ test('toast spawn keeps console flags that were proven to break WinRT toasts off
 
 test('shouldNotify allows at most one toast per three seconds globally', () => {
   const state = createToastRateLimitState();
+  const env = { SAG_TOAST: '1' };
 
-  assert.equal(shouldNotify(10_000, { platform: 'win32', env: {}, state }), true);
-  assert.equal(shouldNotify(10_001, { platform: 'win32', env: {}, state }), false);
-  assert.equal(shouldNotify(12_999, { platform: 'win32', env: {}, state }), false);
-  assert.equal(shouldNotify(10_000 + TOAST_MIN_INTERVAL_MS, { platform: 'win32', env: {}, state }), true);
-  assert.equal(shouldNotify(15_999, { platform: 'win32', env: {}, state }), false);
-  assert.equal(shouldNotify(16_000, { platform: 'win32', env: {}, state }), true);
+  assert.equal(shouldNotify(10_000, { platform: 'win32', env, state }), true);
+  assert.equal(shouldNotify(10_001, { platform: 'win32', env, state }), false);
+  assert.equal(shouldNotify(12_999, { platform: 'win32', env, state }), false);
+  assert.equal(shouldNotify(10_000 + TOAST_MIN_INTERVAL_MS, { platform: 'win32', env, state }), true);
+  assert.equal(shouldNotify(15_999, { platform: 'win32', env, state }), false);
+  assert.equal(shouldNotify(16_000, { platform: 'win32', env, state }), true);
 });
 
 test('shouldNotify is false on non-Windows platforms and does not consume the budget', () => {
   const state = createToastRateLimitState();
+  const env = { SAG_TOAST: '1' };
 
-  assert.equal(shouldNotify(1_000, { platform: 'linux', env: {}, state }), false);
-  assert.equal(shouldNotify(1_001, { platform: 'darwin', env: {}, state }), false);
+  assert.equal(shouldNotify(1_000, { platform: 'linux', env, state }), false);
+  assert.equal(shouldNotify(1_001, { platform: 'darwin', env, state }), false);
   assert.equal(state.lastNotifiedAt, Number.NEGATIVE_INFINITY);
-  assert.equal(shouldNotify(1_002, { platform: 'win32', env: {}, state }), true);
+  assert.equal(shouldNotify(1_002, { platform: 'win32', env, state }), true);
 });
 
-test('SAG_TOAST=0 disables toasts while unset or other values keep the default on', () => {
+test('toasts are opt-in: SAG_TOAST=1 enables, unset and 0 stay off', () => {
   assert.equal(
     shouldNotify(5_000, {
       platform: 'win32',
@@ -114,7 +116,7 @@ test('SAG_TOAST=0 disables toasts while unset or other values keep the default o
   );
   assert.equal(
     shouldNotify(5_001, { platform: 'win32', env: {}, state: createToastRateLimitState() }),
-    true,
+    false,
   );
   assert.equal(
     shouldNotify(5_002, {

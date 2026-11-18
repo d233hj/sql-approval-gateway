@@ -72,9 +72,10 @@ export function shouldNotify(
   if (platform !== 'win32') return false;
 
   const env = options.env ?? process.env;
-  // Only the exact documented opt-out disables toasts; unset/other values keep
-  // the default-on behavior.
-  if (env.SAG_TOAST === '0') return false;
+  // Opt-in only. The desktop shell shows native notifications; core's toast
+  // helper launches a hidden powershell.exe, which HIPS/EDR products flag as
+  // suspicious behavior, so it is disabled unless explicitly enabled.
+  if (env.SAG_TOAST !== '1') return false;
 
   const state = options.state ?? sharedRateLimitState;
   if (now - state.lastNotifiedAt < TOAST_MIN_INTERVAL_MS) return false;

@@ -3538,6 +3538,83 @@ function paintLiveStatus(connected: boolean): void {
   liveStatusEl.classList.toggle('live-connecting', !connected);
 }
 
+/* ------------------------------------------- desktop shell notifications */
+
+/**
+ * The Windows desktop shell (not the embedded DSH iframe) shows native OS
+ * notifications for new proposals while its window is in the tray. Native
+ * notifications avoid core spawning a hidden `powershell.exe`, which HIPS/EDR
+ * products rightly flag as suspicious behavior.
+ */
+declare global {
+  interface Window {
+    /** Set by the desktop shell's sandboxed preload (constant flags only). */
+    sagDesktop?: {
+      shell?: boolean;
+      notify?: (title: string, body: string) => void;
+    };
+  }
+}
+
+function isDesktopShell(): boolean {
+  if (isEmbeddedMode()) return false;
+  if (typeof window !== 'undefined' && window.sagDesktop?.shell === true) return true;
+  return typeof navigator !== 'undefined' && navigator.userAgent.includes('Electron/');
+}
+
+let desktopNotificationPermission: NotificationPermission | 'unsupported' = 'default';
+
+async function ensureDesktopNotifications(): Promise<void> {
+  if (!isDesktopShell()) {
+    desktopNotificationPermission = 'unsupported';
+    return;
+  }
+  // The desktop shell exposes a main-process bridge; no Web Notification
+  // permission is involved and Windows shows a tray balloon.
+  if (window.sagDesktop?.notify) {
+    desktopNotificationPermission = 'granted';
+    return;
+  }
+  if (typeof Notification === 'undefined') {
+    desktopNotificationPermission = 'unsupported';
+    return;
+  }
+  try {
+    // Electron reports "denied" until the session permission handler grants it,
+    // so ask unconditionally rather than trusting the initial value.
+    desktopNotificationPermission = await Notification.requestPermission();
+  } catch {
+    desktopNotificationPermission = 'unsupported';
+  }
+}
+
+function notifyPendingProposals(count: number): void {
+  if (count <= 0 || !isDesktopShell()) return;
+  const title = 'SQL 审批 · 新提案';
+  const body = `收到 ${count} 条新的 SQL 审批请求`;
+  // A focused window already shows the in-page banner; notify when the console
+  // is not the foreground window (tray, minimized, or another app on top).
+  // `document.hidden` is not reliable for Electron windows hidden via hide().
+  if (document.hasFocus()) return;
+  if (window.sagDesktop?.notify) {
+    window.sagDesktop.notify(title, body);
+    return;
+  }
+  if (desktopNotificationPermission !== 'granted') return;
+  try {
+    const notification = new Notification(title, {
+      body,
+      tag: 'sag-pending-proposals',
+    });
+    notification.onclick = () => {
+      window.focus();
+      notification.close();
+    };
+  } catch {
+    // Notifications are a convenience; never break the console.
+  }
+}
+
 function showLiveFailure(): void {
   if (liveFailureEl !== null) liveFailureEl.hidden = false;
 }
@@ -3587,7 +3664,12 @@ function applyRemoteSnapshot(remote: Proposal[]): void {
   paintFilters();
   paintList();
 
-  if (freshPending > 0) showNewProposalNotice(freshPending);
+  if (freshPending > 0) {
+    showNewProposalNotice(freshPending);
+    // The desktop shell mirrors the in-page banner to a native OS notification
+    // when its window is hidden (tray/minimized).
+    notifyPendingProposals(freshPending);
+  }
 }
 
 /**
@@ -3596,6 +3678,13 @@ function applyRemoteSnapshot(remote: Proposal[]): void {
  */
 function scheduleLiveRefresh(): void {
   if (liveRefreshTimer !== null) return;
+  // Hidden Electron windows throttle timers (Chromium backgrounds them), so a
+  // debounced push could arrive a minute late. When the console is not visible,
+  // take the snapshot immediately instead.
+  if (document.hidden) {
+    void refreshFromPush();
+    return;
+  }
   liveRefreshTimer = window.setTimeout(() => {
     liveRefreshTimer = null;
     void refreshFromPush();
@@ -3772,6 +3861,7 @@ async function readEventStream(body: ReadableStream<Uint8Array>): Promise<void> 
 /** Starts the live stream (idempotent); called after unlock. */
 function startLiveUpdates(): void {
   if (liveAbort !== null) return;
+  void ensureDesktopNotifications();
   void connectLiveUpdates();
 }
 
