@@ -169,7 +169,7 @@ flowchart LR
 
 ### 方式 A：Windows 便携版（推荐给最终用户）
 
-1. 从 [Releases](https://github.com/d233hj/sql-approval-gateway/releases) 下载 `SQL审批网关-<version>-portable.exe` 并校验 `SHA256SUMS.txt`；
+1. 从 [Releases](https://github.com/d233hj/sql-approval-gateway/releases) 下载 `SQL-Approval-Gateway-<version>-portable.exe` 并校验 `SHA256SUMS.txt`；
 2. 首次运行若出现 SmartScreen，点「更多信息 → 仍要运行」；
 3. 双击后等待窗口出现（便携版每次启动需解压运行时，首次约 1–2 分钟，属正常现象）；
 4. 按[首次使用](#首次使用)完成设置。
