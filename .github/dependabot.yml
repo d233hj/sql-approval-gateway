@@ -1,0 +1,15 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      dev-dependencies:
+        dependency-type: development
+    ignore:
+      # Electron upgrades change the bundled Node runtime; bump deliberately.
+      - dependency-name: electron
+        update-types: [version-update:semver-major]
