@@ -27,9 +27,9 @@
     "autostart:uninstall": "powershell -NoProfile -ExecutionPolicy Bypass -File deploy/windows/uninstall-autostart.ps1"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
+    "@types/node": "^26.6.6",
     "electron-builder": "^26.18.0",
-    "typescript": "^5.9.0"
+    "typescript": "^7.0.2"
   },
   "repository": {
     "url": "https://github.com/d233hj/sql-approval-gateway.git",
