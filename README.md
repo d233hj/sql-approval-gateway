@@ -174,7 +174,7 @@ Agent (LLM / MCP / DSH 插件)     人（审批台）                数据库
 ### 方式 B：源码运行（开发者）
 
 ```bash
-git clone https://github.com/<you>/sql-approval-gateway.git
+git clone https://github.com/d233hj/sql-approval-gateway.git
 cd sql-approval-gateway
 
 npm install
