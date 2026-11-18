@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- New-proposal notifications now come from the desktop shell as native Windows
+  notifications (preload bridge + AUMID-registered Start Menu shortcut). Core no
+  longer launches a hidden `powershell.exe` by default, which HIPS/EDR products
+  flag as suspicious behavior; the PowerShell-based toast is opt-in via
+  `SAG_TOAST=1`.
+- Hidden/minimized console windows refresh proposal lists immediately instead of
+  waiting for a throttled timer.
+
 ## [0.1.0] - 2026-11-18
 
 ### Added

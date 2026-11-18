@@ -64,7 +64,7 @@ Agent (LLM / MCP / DSH 插件)     人（审批台）                数据库
 ## 功能一览
 
 - **四种客户端，一个 core**：Web SPA（同源托管）、Windows Electron 桌面端（托盘/单实例/自启）、DSH 插件（右侧边栏）、MCP stdio server（Hermes 等通用 Agent 框架）。
-- **响应式审批台**：SSE 推送，Agent 提交后页面秒级出现新提案（不是轮询）；右下角 Windows 通知（可关）。
+- **响应式审批台**：SSE 推送，Agent 提交后页面秒级出现新提案（不是轮询）；桌面端窗口在托盘/最小化时用原生 Windows 通知提醒。
 - **人工审批闭环**：批准前二次校验 SQL 摘要与策略版本；执行可取消；超时/过期自动收敛。
 - **Agent 体验**：`sql_submit_and_wait` —— 提交后等待人工批准并自动回读结果，但**绝不代批准**。
 - **凭据与权限**：Agent token `sag_…` 只在创建时显示一次，服务端只存 SHA-256；可在设置页随时吊销。
@@ -287,7 +287,7 @@ MCP 与 DSH 插件使用同一组工具语义：**只提交、只读、不批准
 | `SAG_URL` | core 地址（默认 `http://127.0.0.1:43119`） |
 | `SAG_TOKEN` | Agent token（`sag_…`，只在创建时显示一次） |
 | `SAG_DATA_DIR` | 桌面端数据目录覆盖（便携版默认 exe 同目录 `data\`） |
-| `SAG_TOAST=0` | 关闭新提案的 Windows 通知 |
+| `SAG_TOAST` | `1` 启用 core 的 PowerShell 通知（默认关闭；桌面端已用原生通知，无需此项） |
 
 > 其余 `SAG_SESSION_*` / `SAG_*_TTL_MS` 为测试/调试用覆盖项，生产请使用审批台内的设置项。
 
