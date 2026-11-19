@@ -10,6 +10,7 @@ import {
   validateReadOnlySql,
 } from '../src/policy.js';
 import {
+  addTestSource,
   bearer,
   cookieAuth,
   request,
@@ -246,6 +247,136 @@ test('explicit mssql rejects lock hints and metadata access', () => {
 
 test('explicit sqlite rejects the sqlite catalog', () => {
   expectDenied('SELECT * FROM sqlite_master', 'METADATA_FORBIDDEN', 'sqlite');
+});
+
+test('system catalogs stay denied unless the allow_system_catalog option is set', () => {
+  // Default: every catalog reference fails, exactly as before the setting existed.
+  expectDenied('SELECT * FROM sys.tables', 'METADATA_FORBIDDEN', 'mssql');
+  expectDenied('SELECT * FROM pg_catalog.pg_tables', 'METADATA_FORBIDDEN', 'postgres');
+
+  // Enabled: read-only catalog queries pass for the matching dialect.
+  validateReadOnlySql('SELECT * FROM sys.tables', { dialect: 'mssql', allowSystemCatalog: true });
+  validateReadOnlySql('SELECT name FROM sys.columns', {
+    dialect: 'mssql',
+    allowSystemCatalog: true,
+  });
+  validateReadOnlySql('SELECT * FROM INFORMATION_SCHEMA.COLUMNS', {
+    dialect: 'mssql',
+    allowSystemCatalog: true,
+  });
+  validateReadOnlySql('SELECT DB_NAME() AS db', { dialect: 'mssql', allowSystemCatalog: true });
+  validateReadOnlySql('SELECT * FROM pg_catalog.pg_tables', {
+    dialect: 'postgres',
+    allowSystemCatalog: true,
+  });
+  validateReadOnlySql('SELECT version()', { dialect: 'postgres', allowSystemCatalog: true });
+  validateReadOnlySql('SELECT * FROM sqlite_master', {
+    dialect: 'sqlite',
+    allowSystemCatalog: true,
+  });
+  validateReadOnlySql('SELECT * FROM information_schema.tables', {
+    dialect: 'mysql',
+    allowSystemCatalog: true,
+  });
+
+  // A catalog from another dialect is still rejected (fail closed).
+  assert.throws(
+    () =>
+      validateReadOnlySql('SELECT * FROM sys.tables', {
+        dialect: 'sqlite',
+        allowSystemCatalog: true,
+      }),
+    (error: unknown) => error instanceof SqlPolicyError,
+  );
+});
+
+test('the catalog switch still denies password hashes, DMVs, file reads and MySQL system DBs', () => {
+  const option = (dialect: SourceDialect) => ({ dialect, allowSystemCatalog: true });
+  const denied = (sql: string, dialect: SourceDialect) => {
+    try {
+      validateReadOnlySql(sql, option(dialect));
+    } catch (error) {
+      assert.ok(error instanceof SqlPolicyError, String(error));
+      return error.code;
+    }
+    assert.fail(`expected ${sql} [${dialect}] to be denied`);
+  };
+
+  assert.equal(denied('SELECT * FROM sys.sql_logins', 'mssql'), 'METADATA_FORBIDDEN');
+  assert.equal(denied('SELECT * FROM sys.syslogins', 'mssql'), 'METADATA_FORBIDDEN');
+  assert.equal(denied('SELECT * FROM sys.dm_exec_requests', 'mssql'), 'METADATA_FORBIDDEN');
+  assert.equal(denied('SELECT * FROM pg_catalog.pg_authid', 'postgres'), 'METADATA_FORBIDDEN');
+  assert.equal(denied('SELECT * FROM pg_catalog.pg_shadow', 'postgres'), 'METADATA_FORBIDDEN');
+  assert.equal(denied("SELECT pg_read_file('/etc/passwd')", 'postgres'), 'METADATA_FORBIDDEN');
+  assert.equal(denied('SELECT * FROM sqlite_temp_master', 'sqlite'), 'METADATA_FORBIDDEN');
+  assert.equal(denied('SELECT * FROM sqlite_sequence', 'sqlite'), 'METADATA_FORBIDDEN');
+  assert.equal(denied('SELECT * FROM mysql.user', 'mysql'), 'METADATA_FORBIDDEN');
+  assert.equal(
+    denied('SELECT * FROM performance_schema.threads', 'mysql'),
+    'METADATA_FORBIDDEN',
+  );
+});
+
+test('the catalog switch never relaxes write protection', () => {
+  const option = { dialect: 'mssql' as const, allowSystemCatalog: true };
+  for (const sql of [
+    'SELECT * INTO backup FROM sys.tables',
+    'DELETE FROM sys.tables',
+    'UPDATE sys.tables SET name = 1',
+    'SELECT * FROM sys.tables; SELECT 1',
+  ]) {
+    assert.throws(
+      () => validateReadOnlySql(sql, option),
+      (error: unknown) => error instanceof SqlPolicyError,
+      sql,
+    );
+  }
+});
+
+test('HTTP submission honours security.allow_system_catalog and approval re-checks it', async (t) => {
+  const app = await startTestGateway(t);
+  const auth = await setupAndUnlock(app, { wantToken: true });
+  const source = await addTestSource(app, auth, { name: 'catalog-source' });
+
+  const submit = (sql: string) =>
+    request(app.url, '/v1/agent/proposals', {
+      method: 'POST',
+      headers: bearer(auth.agentToken),
+      body: { source_id: source.id, sql, purpose: 'catalog test' },
+    });
+  const setSetting = (value: boolean) =>
+    request(app.url, '/v1/admin/settings', {
+      method: 'PUT',
+      headers: cookieAuth(auth.cookie, auth.csrfToken),
+      body: { 'security.allow_system_catalog': value },
+    });
+
+  const denied = await submit('SELECT * FROM sqlite_master');
+  assert.equal(denied.status, 400);
+  assert.equal((denied.json as { code?: string }).code, 'METADATA_FORBIDDEN');
+
+  const enabled = await setSetting(true);
+  assert.equal(enabled.status, 200, enabled.text);
+  assert.equal(
+    (enabled.json as { settings: Record<string, unknown> }).settings[
+      'security.allow_system_catalog'
+    ],
+    true,
+  );
+
+  const created = await submit('SELECT * FROM sqlite_master');
+  assert.equal(created.status, 201, created.text);
+  const proposalId = (created.json as { id: string }).id;
+
+  // Turning the switch back off must block the approval, not just new proposals.
+  const disabled = await setSetting(false);
+  assert.equal(disabled.status, 200, disabled.text);
+  const approved = await request(app.url, `/v1/admin/proposals/${proposalId}/approve`, {
+    method: 'POST',
+    headers: cookieAuth(auth.cookie, auth.csrfToken),
+  });
+  assert.equal(approved.status, 400);
+  assert.equal((approved.json as { code?: string }).code, 'METADATA_FORBIDDEN');
 });
 
 test('allows dialect-specific positives when the dialect is explicit', () => {

@@ -167,6 +167,9 @@ interface SettingsUi {
   securityBusy: boolean;
   securityError: string | null;
   securityNotice: string | null;
+  catalogBusy: boolean;
+  catalogError: string | null;
+  catalogNotice: string | null;
   passwordCurrent: string;
   passwordNew: string;
   passwordConfirm: string;
@@ -317,6 +320,9 @@ const settingsUi: SettingsUi = {
   securityBusy: false,
   securityError: null,
   securityNotice: null,
+  catalogBusy: false,
+  catalogError: null,
+  catalogNotice: null,
   passwordCurrent: '',
   passwordNew: '',
   passwordConfirm: '',
@@ -1583,6 +1589,9 @@ function resetSettingsUi(): void {
   settingsUi.securityBusy = false;
   settingsUi.securityError = null;
   settingsUi.securityNotice = null;
+  settingsUi.catalogBusy = false;
+  settingsUi.catalogError = null;
+  settingsUi.catalogNotice = null;
   settingsUi.passwordCurrent = '';
   settingsUi.passwordNew = '';
   settingsUi.passwordConfirm = '';
@@ -3289,6 +3298,94 @@ async function saveReadonlySetting(value: boolean): Promise<void> {
   }
 }
 
+function buildSystemCatalogField(): HTMLElement {
+  const wrap = el('div', 'security-readonly');
+  const loaded = state.settings !== null;
+  const enabled =
+    state.settings?.settings['security.allow_system_catalog'] ??
+    DEFAULT_SETTINGS['security.allow_system_catalog'];
+
+  const field = el('label', 'check-field');
+  const checkbox = el('input');
+  checkbox.type = 'checkbox';
+  checkbox.id = 'setting-allow-system-catalog';
+  checkbox.checked = enabled;
+  checkbox.disabled = !loaded || settingsUi.catalogBusy;
+  checkbox.addEventListener('change', () => {
+    void saveSystemCatalogSetting(checkbox.checked);
+  });
+
+  const text = el('span', 'readonly-setting-text');
+  const caption = el('span', 'readonly-setting-title');
+  caption.textContent = '允许查询系统目录';
+  const description = el('span', 'readonly-setting-desc');
+  description.textContent =
+    '允许 Agent 查询 sys / INFORMATION_SCHEMA / pg_catalog / sqlite_master；仍拒绝密码哈希（sys.sql_logins）、DMV（sys.dm_*）与 MySQL 系统库';
+  text.append(caption, description);
+  field.htmlFor = checkbox.id;
+  field.append(checkbox, text);
+  wrap.append(field);
+
+  if (!loaded) {
+    const hint = el('p', 'hint');
+    hint.textContent = settingsUi.settingsBusy
+      ? '正在加载系统目录设置…'
+      : '设置尚未加载，暂时无法修改系统目录开关。';
+    wrap.append(hint);
+  }
+
+  const busy = el('p', 'hint');
+  busy.hidden = !settingsUi.catalogBusy;
+  busy.textContent = '正在保存系统目录设置…';
+
+  const error = el('p', 'error');
+  error.setAttribute('role', 'alert');
+  error.hidden = settingsUi.catalogError === null;
+  error.textContent = settingsUi.catalogError ?? '';
+
+  const notice = el('p', 'notice');
+  notice.setAttribute('role', 'status');
+  notice.hidden = settingsUi.catalogNotice === null;
+  notice.textContent = settingsUi.catalogNotice ?? '';
+
+  wrap.append(busy, error, notice);
+  return wrap;
+}
+
+async function saveSystemCatalogSetting(value: boolean): Promise<void> {
+  if (settingsUi.catalogBusy || state.settings === null) return;
+  const key = 'security.allow_system_catalog' as const;
+  const previous = state.settings.settings[key];
+  state.settings = {
+    ...state.settings,
+    settings: { ...state.settings.settings, [key]: value },
+  };
+  settingsUi.catalogBusy = true;
+  settingsUi.catalogError = null;
+  settingsUi.catalogNotice = null;
+  repaintSettings();
+  try {
+    const response = await call(() => api.updateSettings({ [key]: value }));
+    state.settings = { ...state.settings, settings: response.settings };
+    settingsUi.catalogNotice = response.settings[key]
+      ? '已允许查询系统目录：Agent 可提交 sys / INFORMATION_SCHEMA 等只读查询，仍需人工批准。'
+      : '已禁止查询系统目录。';
+  } catch (error) {
+    state.settings = {
+      ...state.settings,
+      settings: { ...state.settings.settings, [key]: previous },
+    };
+    if (isSessionError(error)) {
+      handleSessionLost(SESSION_MESSAGE);
+      return;
+    }
+    settingsUi.catalogError = describeActionError(error);
+  } finally {
+    settingsUi.catalogBusy = false;
+    repaintSettings();
+  }
+}
+
 function buildSecurityCard(): HTMLElement {
   const section = el('section', 'card settings-section');
   const title = el('h2', 'section-title');
@@ -3299,7 +3396,7 @@ function buildSecurityCard(): HTMLElement {
   const hint = el('p', 'hint');
   hint.textContent = '修改管理密码：至少 12 位，且同时包含字母和数字。';
 
-  section.append(head, hint, buildReadonlySecurityField(), buildPasswordForm());
+  section.append(head, hint, buildReadonlySecurityField(), buildSystemCatalogField(), buildPasswordForm());
   return section;
 }
 

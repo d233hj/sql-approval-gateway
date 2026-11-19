@@ -1396,12 +1396,15 @@ export class Gateway {
     if (!source.dialect) {
       throw new ApiError('POLICY_DENIED', 400, 'Source dialect is unavailable');
     }
-    validateReadOnlySql(body.sql, source.dialect);
-
     // Defaults and upper bounds come from the persisted settings, never from a
     // schema default: a missing max_rows/timeout_s must observe the current
     // admin configuration at submission time.
     const settings = readSettings(this.store);
+    validateReadOnlySql(body.sql, {
+      dialect: source.dialect,
+      allowSystemCatalog: settings['security.allow_system_catalog'],
+    });
+
     const maxRows = body.max_rows ?? settings['proposal.default_max_rows'];
     const timeoutS = body.timeout_s ?? settings['proposal.default_timeout_s'];
     if (maxRows > settings['proposal.max_max_rows']) {
@@ -1623,8 +1626,12 @@ export class Gateway {
         source ? 'Source dialect is unavailable' : 'Source not found',
       );
     }
+    const settings = readSettings(this.store);
     try {
-      validateReadOnlySql(proposal.sql, source.dialect);
+      validateReadOnlySql(proposal.sql, {
+        dialect: source.dialect,
+        allowSystemCatalog: settings['security.allow_system_catalog'],
+      });
     } catch (error) {
       this.store.failProposal(
         proposalId,
@@ -1642,7 +1649,7 @@ export class Gateway {
     // is skipped entirely when `security.require_readonly_source` is false.
     if (
       proposal.status === 'PENDING_APPROVAL' &&
-      readSettings(this.store)['security.require_readonly_source']
+      settings['security.require_readonly_source']
     ) {
       const guard = await this.enforceReadonlySource(source);
       if (guard) {

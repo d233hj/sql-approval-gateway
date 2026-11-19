@@ -118,16 +118,35 @@ export interface PolicyValidationOptions {
    * detection, which is intended for tools and tests only.
    */
   dialect?: SourceDialect;
+  /**
+   * Allow read-only access to system catalogs (`sys`, `information_schema`,
+   * `pg_catalog`, SQLite `sqlite_master`/`sqlite_schema`). Default false.
+   * Password-bearing objects (`sys.sql_logins`), dynamic management views and
+   * MySQL system databases stay denied even when this is enabled.
+   */
+  allowSystemCatalog?: boolean;
 }
 
-function resolveDialect(input: SourceDialect | PolicyValidationOptions | undefined): SourceDialect | undefined {
-  if (input === undefined) return undefined;
-  const candidate = typeof input === 'string' ? input : input.dialect;
-  if (candidate === undefined) return undefined;
-  if (!(candidate in PARSER_DATABASE)) {
+interface ResolvedPolicyOptions {
+  dialect?: SourceDialect;
+  allowSystemCatalog: boolean;
+}
+
+function resolveOptions(
+  input: SourceDialect | PolicyValidationOptions | undefined,
+): ResolvedPolicyOptions {
+  if (input === undefined) return { allowSystemCatalog: false };
+  if (typeof input === 'string') {
+    if (!(input in PARSER_DATABASE)) {
+      throw new SqlPolicyError('POLICY_DENIED', 'Unknown SQL dialect');
+    }
+    return { dialect: input, allowSystemCatalog: false };
+  }
+  const dialect = input.dialect;
+  if (dialect !== undefined && !(dialect in PARSER_DATABASE)) {
     throw new SqlPolicyError('POLICY_DENIED', 'Unknown SQL dialect');
   }
-  return candidate;
+  return { dialect, allowSystemCatalog: input.allowSystemCatalog === true };
 }
 
 // -------------------------------------------------------------- keyword guard
@@ -284,6 +303,47 @@ const EXTERNAL_FUNCTIONS = new Set([
   'openxml',
 ]);
 
+/**
+ * Catalog schemas a human may enable through `security.allow_system_catalog`.
+ * MySQL's `mysql`/`performance_schema` are absent on purpose: `mysql.user`
+ * carries credentials, and DMVs can expose other sessions' query text.
+ */
+const ALLOWED_CATALOGS: Readonly<Record<SourceDialect, ReadonlySet<string>>> = {
+  mssql: new Set(['sys', 'information_schema']),
+  postgres: new Set(['information_schema', 'pg_catalog']),
+  mysql: new Set(['information_schema']),
+  sqlite: new Set(),
+};
+
+/** Catalog objects that stay denied even when system catalogs are enabled. */
+const ALWAYS_DENIED_CATALOG_TABLES = new Set([
+  'sql_logins', // SQL Server: contains password hashes
+  'syslogins', // SQL Server: legacy view over the same data
+  'pg_authid', // PostgreSQL: contains password hashes
+  'pg_shadow', // PostgreSQL: legacy view over the same data
+]);
+
+/** SQLite's schema tables; the only SQLite "system catalog" that is allowed. */
+const SQLITE_CATALOG_TABLES = new Set(['sqlite_master', 'sqlite_schema']);
+
+/** Metadata functions that read files or mutate session state: never allowed. */
+const ALWAYS_DENIED_METADATA_FUNCTIONS = new Set([
+  'pg_read_file',
+  'pg_ls_dir',
+  'pg_stat_file',
+  'set_config',
+]);
+
+function catalogAllowed(dialect: SourceDialect, catalog: string): boolean {
+  return ALLOWED_CATALOGS[dialect]?.has(catalog) === true;
+}
+
+function catalogTableAllowed(dialect: SourceDialect, catalog: string, table: string): boolean {
+  if (!catalogAllowed(dialect, catalog)) return false;
+  if (table.startsWith('dm_')) return false;
+  return !ALWAYS_DENIED_CATALOG_TABLES.has(table);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -308,10 +368,17 @@ function functionNameParts(node: Record<string, unknown>): string[] {
   );
 }
 
-function checkFunctionName(rawName: string): void {
+function checkFunctionName(rawName: string, allowSystemCatalog: boolean): void {
   const name = rawName.replace(/^[\["`]|[\]"`]$/g, '').toLowerCase();
-  if (name.startsWith('pragma_') || DENIED_FUNCTIONS.has(name)) {
+  if (name.startsWith('pragma_')) {
     throw new SqlPolicyError('METADATA_FORBIDDEN', 'Server metadata access is not allowed');
+  }
+  if (DENIED_FUNCTIONS.has(name)) {
+    const allowed =
+      allowSystemCatalog && !ALWAYS_DENIED_METADATA_FUNCTIONS.has(name);
+    if (!allowed) {
+      throw new SqlPolicyError('METADATA_FORBIDDEN', 'Server metadata access is not allowed');
+    }
   }
   if (name.startsWith('sp_') || name.startsWith('xp_')) {
     throw new SqlPolicyError('EXTERNAL_SOURCE', 'External data sources are not allowed');
@@ -321,7 +388,11 @@ function checkFunctionName(rawName: string): void {
   }
 }
 
-function checkTableReference(node: Record<string, unknown>, dialect: SourceDialect): void {
+function checkTableReference(
+  node: Record<string, unknown>,
+  dialect: SourceDialect,
+  allowSystemCatalog: boolean,
+): void {
   const table = lower(node.table);
   if (table.length === 0) return;
 
@@ -336,10 +407,21 @@ function checkTableReference(node: Record<string, unknown>, dialect: SourceDiale
   if (server.length > 0) {
     throw new SqlPolicyError('CROSS_DATABASE', 'Cross-database names are not allowed');
   }
-  if (SYSTEM_SCHEMAS.has(db) || SYSTEM_SCHEMAS.has(schema)) {
+
+  // A catalog may appear as the schema part (`sys.tables`) or, for MySQL-style
+  // two-part names, as the database part (`information_schema.tables`).
+  const catalog = schema.length > 0 ? schema : db;
+  const allowedCatalog =
+    allowSystemCatalog &&
+    catalog.length > 0 &&
+    catalogTableAllowed(dialect, catalog, table);
+  const allowedSqliteCatalog =
+    allowSystemCatalog && dialect === 'sqlite' && SQLITE_CATALOG_TABLES.has(table);
+
+  if ((SYSTEM_SCHEMAS.has(db) || SYSTEM_SCHEMAS.has(schema)) && !allowedCatalog) {
     throw new SqlPolicyError('METADATA_FORBIDDEN', 'System catalogs are not allowed');
   }
-  if (table.startsWith('sqlite_') || table.startsWith('pragma_')) {
+  if ((table.startsWith('sqlite_') || table.startsWith('pragma_')) && !allowedSqliteCatalog) {
     throw new SqlPolicyError('METADATA_FORBIDDEN', 'System catalogs are not allowed');
   }
   if (dialect === 'sqlite' && db === 'temp') {
@@ -349,10 +431,10 @@ function checkTableReference(node: Record<string, unknown>, dialect: SourceDiale
   // Three-part names (db.schema.table) and any server-qualified name are
   // cross-database. A two-part name is schema.table for mssql/postgres/sqlite,
   // but database.table for MySQL, which is also cross-database there.
-  if (schema.length > 0) {
+  if (schema.length > 0 && !allowedCatalog) {
     throw new SqlPolicyError('CROSS_DATABASE', 'Cross-database names are not allowed');
   }
-  if (dialect === 'mysql' && db.length > 0) {
+  if (dialect === 'mysql' && db.length > 0 && !allowedCatalog) {
     throw new SqlPolicyError('CROSS_DATABASE', 'Cross-database names are not allowed');
   }
 }
@@ -393,12 +475,17 @@ function checkFromItems(node: Record<string, unknown>): void {
   }
 }
 
-function inspectAst(node: unknown, dialect: SourceDialect, depth: number): void {
+function inspectAst(
+  node: unknown,
+  dialect: SourceDialect,
+  depth: number,
+  allowSystemCatalog: boolean,
+): void {
   if (depth > 200) {
     throw new SqlPolicyError('POLICY_DENIED', 'SQL nesting is too deep');
   }
   if (Array.isArray(node)) {
-    for (const item of node) inspectAst(item, dialect, depth + 1);
+    for (const item of node) inspectAst(item, dialect, depth + 1, allowSystemCatalog);
     return;
   }
   if (!isRecord(node)) return;
@@ -413,10 +500,10 @@ function inspectAst(node: unknown, dialect: SourceDialect, depth: number): void 
     if (parts.length === 0) {
       throw new SqlPolicyError('POLICY_DENIED', 'Unable to verify a function call');
     }
-    for (const part of parts) checkFunctionName(part);
+    for (const part of parts) checkFunctionName(part, allowSystemCatalog);
   }
   if (type === 'aggr_func' && typeof node.name === 'string') {
-    checkFunctionName(node.name);
+    checkFunctionName(node.name, allowSystemCatalog);
   }
   if (type === 'select') {
     checkSelectNode(node);
@@ -426,7 +513,7 @@ function inspectAst(node: unknown, dialect: SourceDialect, depth: number): void 
     throw new SqlPolicyError('DANGEROUS_LOCK_HINT', 'Lock hints and query options are not allowed');
   }
   if (typeof node.table === 'string' && type !== 'column_ref') {
-    checkTableReference(node, dialect);
+    checkTableReference(node, dialect, allowSystemCatalog);
   }
   if (type === 'column_ref') {
     checkColumnReference(node);
@@ -435,12 +522,16 @@ function inspectAst(node: unknown, dialect: SourceDialect, depth: number): void 
   for (const [key, value] of Object.entries(node)) {
     if (key === 'loc' || key === 'tableList' || key === 'columnList') continue;
     if (typeof value === 'object' && value !== null) {
-      inspectAst(value, dialect, depth + 1);
+      inspectAst(value, dialect, depth + 1, allowSystemCatalog);
     }
   }
 }
 
-function parseAndValidate(sql: string, dialect: SourceDialect): void {
+function parseAndValidate(
+  sql: string,
+  dialect: SourceDialect,
+  allowSystemCatalog: boolean,
+): void {
   let parsed: unknown;
   try {
     parsed = getParser().astify(sql, { database: PARSER_DATABASE[dialect] });
@@ -468,7 +559,21 @@ function parseAndValidate(sql: string, dialect: SourceDialect): void {
     throw new SqlPolicyError('NOT_SELECT', 'Only SELECT statements are allowed');
   }
 
-  inspectAst(root, dialect, 0);
+  inspectAst(root, dialect, 0, allowSystemCatalog);
+}
+
+/**
+ * Returns the first metadata function the caller may not run, or null when the
+ * statement is acceptable. File-reading and session-mutating functions stay
+ * blocked even when system catalogs are explicitly enabled.
+ */
+function metadataFunctionBlocked(statement: string, allowSystemCatalog: boolean): string | null {
+  const pattern = new RegExp(METADATA_FUNCTION.source, 'gi');
+  for (const match of statement.matchAll(pattern)) {
+    const name = (match[1] ?? '').toLowerCase();
+    if (!allowSystemCatalog || ALWAYS_DENIED_METADATA_FUNCTIONS.has(name)) return name;
+  }
+  return null;
 }
 
 // ------------------------------------------------------------------- public
@@ -497,7 +602,7 @@ export function validateReadOnlySql(
     throw new SqlPolicyError('SQL_TOO_LONG', 'SQL exceeds the maximum length');
   }
 
-  const dialect = resolveDialect(dialectOrOptions);
+  const { dialect, allowSystemCatalog } = resolveOptions(dialectOrOptions);
 
   const { text, unterminated } = stripCommentsAndStrings(sql);
   if (unterminated) {
@@ -551,14 +656,15 @@ export function validateReadOnlySql(
     SERVER_METADATA_VARIABLE.test(statement) ||
     CURRENT_USER_KEYWORD.test(statement) ||
     PRAGMA_FUNCTION_OR_TABLE.test(statement) ||
-    METADATA_FUNCTION.test(statement)
+    metadataFunctionBlocked(statement, allowSystemCatalog)
   ) {
     throw new SqlPolicyError('METADATA_FORBIDDEN', 'Server metadata access is not allowed');
   }
   if (
-    SYSTEM_CATALOG.test(statement) ||
-    SQLITE_CATALOG.test(statement) ||
-    SQLITE_FROM_PREFIX.test(statement)
+    !allowSystemCatalog &&
+    (SYSTEM_CATALOG.test(statement) ||
+      SQLITE_CATALOG.test(statement) ||
+      SQLITE_FROM_PREFIX.test(statement))
   ) {
     throw new SqlPolicyError('METADATA_FORBIDDEN', 'System catalogs are not allowed');
   }
@@ -587,7 +693,7 @@ export function validateReadOnlySql(
   }
 
   if (dialect !== undefined) {
-    parseAndValidate(sql, dialect);
+    parseAndValidate(sql, dialect, allowSystemCatalog);
     return;
   }
 
@@ -597,7 +703,7 @@ export function validateReadOnlySql(
   let firstError: SqlPolicyError | undefined;
   for (const candidate of AUTO_DIALECTS) {
     try {
-      parseAndValidate(sql, candidate);
+      parseAndValidate(sql, candidate, allowSystemCatalog);
       return;
     } catch (error) {
       if (!(error instanceof SqlPolicyError)) {

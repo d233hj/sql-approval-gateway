@@ -98,6 +98,7 @@ test('GET settings returns persisted defaults plus ranges for the UI', async (t)
     'result.ttl_hours': { type: 'integer', min: 1, max: 168 },
     'ui.show_countdown': { type: 'boolean' },
     'security.require_readonly_source': { type: 'boolean' },
+    'security.allow_system_catalog': { type: 'boolean' },
   });
   // Every default is already materialized as a JSON row in `settings`.
   assert.equal(app.gateway.store.getSetting('session.idle_minutes'), '10');

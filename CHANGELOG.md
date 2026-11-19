@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `security.allow_system_catalog` switch (default off): read-only access to
+  `sys` / `INFORMATION_SCHEMA` / `pg_catalog` / SQLite `sqlite_master` for
+  agents, with password-hash views (`sys.sql_logins`, `pg_authid`, …), DMVs,
+  PostgreSQL file-read functions and MySQL system databases still denied.
+  Enforced at submission and re-checked at approval.
+
 ### Changed
 
 - New-proposal notifications now come from the desktop shell as native Windows

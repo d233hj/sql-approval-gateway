@@ -17,6 +17,7 @@ export const SETTING_KEYS = [
   'result.ttl_hours',
   'ui.show_countdown',
   'security.require_readonly_source',
+  'security.allow_system_catalog',
 ] as const;
 
 export type SettingKey = (typeof SETTING_KEYS)[number];
@@ -32,6 +33,12 @@ export interface SettingsValues {
   'result.ttl_hours': number;
   'ui.show_countdown': boolean;
   'security.require_readonly_source': boolean;
+  /**
+   * Allow read-only queries against system catalogs (`sys`, `information_schema`,
+   * `pg_catalog`, `sqlite_master`/`sqlite_schema`). Default off; password hashes
+   * and dynamic management views stay denied even when enabled.
+   */
+  'security.allow_system_catalog': boolean;
 }
 
 export type SettingValue = SettingsValues[SettingKey];
@@ -53,6 +60,7 @@ export const DEFAULT_SETTINGS: Readonly<SettingsValues> = Object.freeze({
   'result.ttl_hours': 24,
   'ui.show_countdown': true,
   'security.require_readonly_source': true,
+  'security.allow_system_catalog': false,
 });
 
 /**
@@ -70,4 +78,5 @@ export const SETTINGS_RANGES: Readonly<Record<SettingKey, SettingRange>> = Objec
   'result.ttl_hours': { type: 'integer', min: 1, max: 168 },
   'ui.show_countdown': { type: 'boolean' },
   'security.require_readonly_source': { type: 'boolean' },
+  'security.allow_system_catalog': { type: 'boolean' },
 });

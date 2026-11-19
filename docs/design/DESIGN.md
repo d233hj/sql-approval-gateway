@@ -240,6 +240,13 @@ LOCKED 时：Agent 可提交提案、可读其历史结果（结果按 §2.1 为
   `OPENROWSET/OPENQUERY/OPENDATASOURCE`、`sp_/xp_`、`@@*`、`DB_NAME/@@SERVERNAME/SUSER_*/HOST_NAME`、
   系统目录（`sys.*`、`information_schema.*`、`pg_catalog.*`、`sqlite_master`）、DMV、
   `OPTION (...)`、`FOR XML/JSON`。
+- **例外：设置页开关 `security.allow_system_catalog`（默认关闭）**。开启后放行只读系统目录查询：
+  - SQL Server：`sys.*`（除 `dm_*`、`sql_logins`、`syslogins`）与 `INFORMATION_SCHEMA.*`；
+  - PostgreSQL：`pg_catalog.*`（除 `pg_authid`、`pg_shadow`）与 `information_schema.*`；
+  - SQLite：`sqlite_master`/`sqlite_schema`；MySQL：仅 `information_schema.*`；
+  - 元数据函数（`DB_NAME()`、`OBJECT_ID()`、`version()` 等）同时放行，但 `pg_read_file/pg_ls_dir/pg_stat_file/set_config`
+    永远拒绝；`@@*`、`CURRENT_USER`、`PRAGMA`、DMV、MySQL 系统库、密码哈希视图保持拒绝；写保护不受影响。
+  - 提交与批准时都读取该开关；校验通过后才进入只读预检与执行。
 - `PIVOT/UNPIVOT` 允许，但必须有正例测试。
 - 先剥离注释与字符串字面量再判定；解析失败一律拒绝（`POLICY_DENIED`）。
 - 每数据源可配 `allow_schemas` / `allow_tables`（v0.2）。

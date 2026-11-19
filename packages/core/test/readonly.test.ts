@@ -189,6 +189,36 @@ test('security.require_readonly_source defaults to true and is a boolean setting
   assert.equal(enabled.status, 200, enabled.text);
 });
 
+test('security.allow_system_catalog defaults to false and is a boolean setting', async (t) => {
+  const app = await startTestGateway(t);
+  const auth = await setupAndUnlock(app);
+
+  const initial = await request(app.url, '/v1/admin/settings', {
+    headers: { Cookie: auth.cookie },
+  });
+  assert.equal(initial.status, 200, initial.text);
+  const settings = bodyOf(initial).settings as Record<string, unknown>;
+  assert.equal(settings['security.allow_system_catalog'], false);
+  const ranges = bodyOf(initial).ranges as Record<string, unknown>;
+  assert.deepEqual(ranges['security.allow_system_catalog'], { type: 'boolean' });
+
+  const enabled = await putSettings(app, auth, {
+    'security.allow_system_catalog': true,
+  });
+  assert.equal(enabled.status, 200, enabled.text);
+  assert.equal(
+    (enabled.body.settings as Record<string, unknown>)['security.allow_system_catalog'],
+    true,
+  );
+  assert.equal(app.gateway.store.getSetting('security.allow_system_catalog'), 'true');
+
+  const invalid = await putSettings(app, auth, {
+    'security.allow_system_catalog': 'yes',
+  });
+  assert.equal(invalid.status, 400, invalid.text);
+  assert.equal(invalid.body.code, 'INVALID_REQUEST');
+});
+
 test('strict mode rejects a writable source with SOURCE_NOT_READONLY and stores no result', async (t) => {
   const writable = probeStub(() =>
     probeResult({

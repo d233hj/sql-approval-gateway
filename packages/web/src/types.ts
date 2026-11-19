@@ -126,6 +126,7 @@ export const SETTING_KEYS = [
   'result.ttl_hours',
   'ui.show_countdown',
   'security.require_readonly_source',
+  'security.allow_system_catalog',
 ] as const;
 
 export type SettingKey = (typeof SETTING_KEYS)[number];
@@ -143,6 +144,8 @@ export interface SettingsValues {
   'ui.show_countdown': boolean;
   /** Strict read-only guard: refuse approvals from writable/unprobed sources. */
   'security.require_readonly_source': boolean;
+  /** Allow read-only queries against system catalogs (default off). */
+  'security.allow_system_catalog': boolean;
 }
 
 export interface SettingRange {
@@ -169,6 +172,7 @@ export const DEFAULT_SETTINGS: Readonly<SettingsValues> = Object.freeze({
   'result.ttl_hours': 24,
   'ui.show_countdown': true,
   'security.require_readonly_source': true,
+  'security.allow_system_catalog': false,
 });
 
 export interface SetupResponse {
