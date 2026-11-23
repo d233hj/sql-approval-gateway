@@ -10,6 +10,6 @@
     "dist:portable": "electron-builder --win portable --config electron-builder.yml --publish never"
   },
   "devDependencies": {
-    "electron": "^45.3.1"
+    "electron": "^45.4.1"
   }
 }
