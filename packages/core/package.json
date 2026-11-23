@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@sql-approval/shared": "*",
-    "mssql": "^12.7.14",
+    "mssql": "^12.7.16",
     "node-sql-parser": "^5.4.0",
     "zod": "^3.25.0"
   },
